@@ -1,27 +1,45 @@
 import requests
-import gdown
 import os
-import zipfile
 import tempfile
 import shutil
 import subprocess
 import sys
+import zipfile
 from PyQt5.QtWidgets import QProgressDialog, QApplication, QMessageBox
 
-APP_VERSION = "1.1"
-METADATA_URL = "https://drive.google.com/uc?export=download&id=16bMHDzyZz6Zt2QvKYD0syv7SeyhvwgH1" 
+# ---------------- Configuration ----------------
+APP_VERSION = "1.2" # Current app version
+GITHUB_OWNER = "SabaBugi"   # 🔴 change this
+GITHUB_REPO = "GEM"       # 🔴 change this
+
+API_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+
+# ------------------------------------------------
 
 def check_for_updates(parent=None):
     try:
-        response = requests.get(METADATA_URL, timeout=10)
+        response = requests.get(API_URL, timeout=10)
         if response.status_code != 200:
-            QMessageBox.warning(parent, "განახლება", "შეცდომა განახლების შემოწმებისას.")
+            QMessageBox.warning(parent, "განახლება", "შეცდომა GitHub-ზე განახლების შემოწმებისას.")
             return
 
-        update_info = response.json()
-        latest_version = update_info.get("latest_version")
-        download_url = update_info.get("download_url")
-        changelog = update_info.get("changelog", "")
+        release_info = response.json()
+        latest_version = release_info.get("tag_name", "").lstrip("v")  # GitHub tags usually like v1.2
+        changelog = release_info.get("body", "")
+
+        # Find installer asset (.exe)
+        assets = release_info.get("assets", [])
+        installer_url = None
+        installer_name = None
+        for asset in assets:
+            if asset["name"].endswith(".exe"):
+                installer_url = asset["browser_download_url"]
+                installer_name = asset["name"]
+                break
+
+        if not installer_url:
+            QMessageBox.warning(parent, "განახლება", "ინსტალატორი ვერ მოიძებნა GitHub რელიზში.")
+            return
 
         if latest_version == APP_VERSION:
             QMessageBox.information(parent, "განახლება", "თქვენ იყენებთ უახლეს ვერსიას.")
@@ -37,17 +55,16 @@ def check_for_updates(parent=None):
         )
 
         if reply == QMessageBox.Yes:
-            download_and_install(download_url, parent)
+            download_and_install(installer_url, installer_name, parent)
 
     except Exception as e:
         QMessageBox.warning(parent, "შეცდომა განახლებისას", str(e))
 
 
-
-def download_and_install(download_url, parent=None):
+def download_and_install(download_url, installer_name, parent=None):
     try:
         temp_dir = tempfile.gettempdir()
-        zip_path = os.path.join(temp_dir, "GEM_Update.zip")
+        installer_path = os.path.join(temp_dir, installer_name)
 
         # --- Progress dialog ---
         progress = QProgressDialog("საინსტალაციო ფაილის ჩამოტვირთვა...", "გაუქმება", 0, 0, parent)
@@ -57,29 +74,18 @@ def download_and_install(download_url, parent=None):
         progress.show()
         QApplication.processEvents()
 
-        # --- Download using gdown ---
-        gdown.download(download_url, zip_path, quiet=False)
+        # --- Download installer ---
+        with requests.get(download_url, stream=True) as r:
+            r.raise_for_status()
+            with open(installer_path, "wb") as f:
+                shutil.copyfileobj(r.raw, f)
 
         progress.setValue(100)
         progress.close()
 
-        # --- Extract ZIP ---
-        extract_dir = os.path.join(temp_dir, "GEM_Update")
-        if os.path.exists(extract_dir):
-            shutil.rmtree(extract_dir)
-        os.makedirs(extract_dir, exist_ok=True)
-
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
-
         # --- Run installer ---
-        installer_exe = os.path.join(extract_dir, "GEM_1.2_setup.exe")
-        if not os.path.exists(installer_exe):
-            QMessageBox.warning(parent, "შეცდომა", "ინსტალატორი ვერ მოიძებნა ზიპ ფაილში.")
-            return
-
         QMessageBox.information(parent, "განახლება", "საინსტალაციო ფაილი ჩამოტვირთულია და გაიხსნება...")
-        subprocess.Popen([installer_exe])
+        subprocess.Popen([installer_path])
         sys.exit(0)
 
     except Exception as e:
