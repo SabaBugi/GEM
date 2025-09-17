@@ -8,7 +8,7 @@ import zipfile
 from PyQt5.QtWidgets import QProgressDialog, QApplication, QMessageBox
 
 # ---------------- Configuration ----------------
-APP_VERSION = "1.1" # Current app version
+APP_VERSION = "1.2" # Current app version
 GITHUB_OWNER = "SabaBugi"   # 🔴 change this
 GITHUB_REPO = "GEM"       # 🔴 change this
 
