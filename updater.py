@@ -8,7 +8,7 @@ import zipfile
 from PyQt5.QtWidgets import QProgressDialog, QApplication, QMessageBox
 
 # ---------------- Configuration ----------------
-APP_VERSION = "1.2" # Current app version
+APP_VERSION = "1.1" # Current app version
 GITHUB_OWNER = "SabaBugi"   # 🔴 change this
 GITHUB_REPO = "GEM"       # 🔴 change this
 
@@ -66,19 +66,35 @@ def download_and_install(download_url, installer_name, parent=None):
         temp_dir = tempfile.gettempdir()
         installer_path = os.path.join(temp_dir, installer_name)
 
-        # --- Progress dialog ---
-        progress = QProgressDialog("საინსტალაციო ფაილის ჩამოტვირთვა...", "გაუქმება", 0, 0, parent)
-        progress.setWindowTitle("განახლება")
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
-        progress.show()
-        QApplication.processEvents()
-
-        # --- Download installer ---
+        # --- Download installer with progress ---
         with requests.get(download_url, stream=True) as r:
             r.raise_for_status()
+            total_size = int(r.headers.get("Content-Length", 0))
+            downloaded = 0
+
+            # --- Progress dialog ---
+            progress = QProgressDialog("საინსტალაციო ფაილის ჩამოტვირთვა...", "გაუქმება", 0, 100, parent)
+            progress.setWindowTitle("განახლება")
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+
             with open(installer_path, "wb") as f:
-                shutil.copyfileobj(r.raw, f)
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            percent = int(downloaded * 100 / total_size)
+                            progress.setValue(percent)
+                            QApplication.processEvents()
+
+                        if progress.wasCanceled():
+                            f.close()
+                            os.remove(installer_path)
+                            QMessageBox.information(parent, "გაუქმდა", "ჩამოტვირთვა გაუქმდა.")
+                            return
 
         progress.setValue(100)
         progress.close()
@@ -90,6 +106,7 @@ def download_and_install(download_url, installer_name, parent=None):
 
     except Exception as e:
         QMessageBox.warning(parent, "შეცდომა განახლებისას", str(e))
+
 
 
 def show_wide_messagebox(parent, title, text, detailed_text=None, buttons=QMessageBox.Ok):
